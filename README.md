@@ -1,0 +1,1 @@
+# Azure Stack MarketPlace RSS Feed Generator
