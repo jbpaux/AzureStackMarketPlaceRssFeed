@@ -5,7 +5,12 @@ from diagrams.azure.devops import ApplicationInsights
 from diagrams.azure.compute import FunctionApps
 from diagrams.azure.storage import StorageAccounts, BlobStorage
 
-with Diagram("Azure Stack Hub MarketPlace RSS Feed", filename="architecture", show=False):
+graph_attr = {
+    "bgcolor": "white",
+    "pad": "0.5"
+}
+
+with Diagram("Azure Stack Hub MarketPlace RSS Feed", graph_attr=graph_attr, filename="architecture", show=False):
     
     gh = Github("MarketPlace Changelog page")
     
