@@ -17,6 +17,7 @@ Marketplace items changes are grouped by update/addition date and generate a new
 - The feed is written to a publicly available Azure Blob which can be consumed by RSS readers.
 
 Other architecture choices:
+
 - Storage Account key and Application Insight Instrumentation key are stored securely in a Keyvault.
 - Only the managed identity of the Function app has access to the Keyvault secrets
 - Most configurable options are available either as ARM Template Parameter and/or Azure Functions AppSettings
@@ -28,4 +29,4 @@ The RSS Feed is available on https://azhmktplacerss.blob.core.windows.net/rss/fe
 
 ## Contribute
 
-Don't hesitate to send Issues and/or Pull Requests !
+Don't hesitate to send Issues and/or Pull Requests!
