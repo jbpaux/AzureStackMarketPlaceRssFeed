@@ -11,7 +11,7 @@ This function aims to solve this issue by generating a RSS feed of the MarketPla
 The Architecture of the solution is pretty simple:
 ![Architecture](diagrams/architecture.png)
 
-- An Azure Function (v3 in C#) is triggered every day to check the official changelog.
+- An Azure Function (v4 in .Net 6) is triggered every day to check the official changelog.
 - If the file was updated, it is parsed to generate a new RSS Feed.
 Marketplace items changes are grouped by update/addition date and generate a new item in the feed.
 - The feed is written to a publicly available Azure Blob which can be consumed by RSS readers.

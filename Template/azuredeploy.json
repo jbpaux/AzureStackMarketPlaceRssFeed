@@ -154,7 +154,7 @@
                     ],
                     "properties": {
                         "WEBSITE_ENABLE_SYNC_UPDATE_SITE": "true",
-                        "FUNCTIONS_EXTENSION_VERSION": "~3",
+                        "FUNCTIONS_EXTENSION_VERSION": "~4",
                         "APPINSIGHTS_INSTRUMENTATIONKEY": "[concat('@Microsoft.KeyVault(SecretUri=', reference(variables('appInsightsSecretResourceId'), '2015-06-01').secretUriWithVersion, ')')]",
                         "AzureWebJobsDashboard": "[concat('@Microsoft.KeyVault(SecretUri=', reference(variables('storageAccountSecretResourceId'),'2015-06-01').secretUriWithVersion, ')')]",
                         "AzureWebJobsStorage": "[concat('@Microsoft.KeyVault(SecretUri=', reference(variables('storageAccountSecretResourceId'),'2015-06-01').secretUriWithVersion, ')')]",
