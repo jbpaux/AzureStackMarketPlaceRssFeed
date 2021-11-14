@@ -1,236 +1,226 @@
 {
-    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-    "contentVersion": "1.0.0.0",
-    "parameters": {
-        "storageAccountName": {
-            "type": "string",
-            "metadata": {
-                "description": "Storage account name where Azure Function will be stored and where RSS Feed will be available"
-            }
-        },
-        "keyVaultName": {
-            "type": "string",
-            "metadata": {
-                "description": "Key vault name used to store connection string securely"
-            }
-        },
-        "functionAppName": {
-            "type": "string",
-            "metadata": {
-                "description": "Azure Function Name"
-            }
-        },
-        "location": {
-            "type": "string",
-            "defaultValue": "[resourceGroup().location]",
-            "metadata": {
-                "description": "Location for all resources."
-            }
-        },
-        "scheduleTrigger": {
-            "type": "string",
-            "defaultValue": "0 0 0 */1 * *",
-            "metadata": {
-                "description": "CRON expression for Timer Trigger of Azure Function"
-            }
-        },
-        "marketPlaceUpdatesURL": {
-            "type": "string",
-            "defaultValue": "https://raw.githubusercontent.com/MicrosoftDocs/azure-stack-docs/master/azure-stack/operator/azure-stack-marketplace-changes.md",
-            "metadata": {
-                "description": "GitHub URL of the MarketPlace changelog"
-            }
-        },
-        "rssPath": {
-            "type": "string",
-            "defaultValue": "rss/feed.xml",
-            "metadata": {
-                "description": "Output file for RSS Feed (container/file.xml format)"
-            }
-        }
-    },
-    "functions": [],
-    "variables": {
-        "storageConnectionSecretName": "StorageConnection",
-        "storageAccountSecretResourceId": "[resourceId(resourceGroup().name, 'Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), variables('storageConnectionSecretName'))]",
-        "appInsightsSecretName": "appInsightsKey",
-        "appInsightsSecretResourceId": "[resourceId(resourceGroup().name, 'Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), variables('appInsightsSecretName'))]",
-        
-        "storageAccountResourceId": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
-        "container": "[first(split(parameters('rssPath'),'/'))]"
-    },
-    "resources": [
-        {
-            "name": "[parameters('storageAccountName')]",
-            "type": "Microsoft.Storage/storageAccounts",
-            "apiVersion": "2018-07-01",
-            "location": "[parameters('location')]",
-            "kind": "StorageV2",
-            "sku": {
-                "name": "Standard_LRS"
-            },
-            "properties": {
-                "accessTier": "Hot"
-            },
-            "resources": [
-                {
-                    "name": "[concat('default/',variables('container'))]",
-                    "type": "blobServices/containers",
-                    "apiVersion": "2018-07-01",
-                    "dependsOn": [
-                        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
-                    ],
-                    "properties": {
-                        "publicAccess": "Blob"
-                    }
-                }
-            ]
-        },
-        {
-            "name": "[parameters('functionAppName')]",
-            "type": "Microsoft.Web/serverfarms",
-            "apiVersion": "2018-02-01",
-            "location": "[parameters('location')]",
-            "sku": {
-                "name": "Y1",
-                "tier": "Dynamic"
-            },
-            "properties": {
-                "name": "[parameters('functionAppName')]",
-                "computeMode": "Dynamic"
-            }
-        },
-        {
-            "apiVersion": "2018-05-01-preview",
-            "name": "[parameters('functionAppName')]",
-            "type": "microsoft.insights/components",
-            "location": "[parameters('location')]",
-            "kind": "other",
-            "tags": {
-                "[concat('hidden-link:', resourceId('Microsoft.Web/sites', parameters('functionAppName')))]": "Resource"
-            },
-            "properties": {
-                "ApplicationId": "[parameters('functionAppName')]",
-                "Application_Type": "other"
-            }
-        },
-        {
-            "name": "[parameters('functionAppName')]",
-            "type": "Microsoft.Web/sites",
-            "apiVersion": "2018-11-01",
-            "location": "[parameters('location')]",
-            "kind": "functionapp",
-            "dependsOn": [
-                "[resourceId('Microsoft.Web/serverfarms', parameters('functionAppName'))]",
-                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
-            ],
-            "identity": {
-                "type": "SystemAssigned"
-            },
-            "properties": {
-                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('functionAppName'))]"
-            },
-            "resources": [
-                {
-                    "apiVersion": "2016-08-01",
-                    "name": "web",
-                    "type": "config",
-                    "dependsOn": [
-                        "[resourceId('Microsoft.Web/Sites', parameters('functionAppName'))]"
-                    ],
-                    "properties": {
-                        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('functionAppName'))]"
-                    }
-                },
-                {
-                    "apiVersion": "2016-08-01",
-                    "type": "config",
-                    "name": "appsettings",
-                    "dependsOn": [
-                        "[resourceId('Microsoft.Web/Sites', parameters('functionAppName'))]",
-                        "[resourceId('Microsoft.KeyVault/vaults/', parameters('keyVaultName'))]",
-                        "[resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), variables('storageConnectionSecretName'))]",
-                        "[resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), variables('appInsightsSecretName'))]"
-                    ],
-                    "properties": {
-                        "WEBSITE_ENABLE_SYNC_UPDATE_SITE": "true",
-                        "FUNCTIONS_EXTENSION_VERSION": "~4",
-                        "APPINSIGHTS_INSTRUMENTATIONKEY": "[concat('@Microsoft.KeyVault(SecretUri=', reference(variables('appInsightsSecretResourceId'), '2015-06-01').secretUriWithVersion, ')')]",
-                        "AzureWebJobsDashboard": "[concat('@Microsoft.KeyVault(SecretUri=', reference(variables('storageAccountSecretResourceId'),'2015-06-01').secretUriWithVersion, ')')]",
-                        "AzureWebJobsStorage": "[concat('@Microsoft.KeyVault(SecretUri=', reference(variables('storageAccountSecretResourceId'),'2015-06-01').secretUriWithVersion, ')')]",
-                        "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[concat('@Microsoft.KeyVault(SecretUri=', reference(variables('storageAccountSecretResourceId'),'2015-06-01').secretUriWithVersion, ')')]",
-                        "WEBSITE_CONTENTSHARE": "[tolower(parameters('functionAppName'))]",
-                        "FUNCTIONS_WORKER_RUNTIME": "dotnet",
-                        "StorageConnection": "[concat('@Microsoft.KeyVault(SecretUri=', reference(variables('storageAccountSecretResourceId'),'2015-06-01').secretUriWithVersion, ')')]",
-                        "ScheduleTriggerTime": "[parameters('scheduleTrigger')]",
-                        "MarketPlaceUpdatesURL": "[parameters('marketPlaceUpdatesURL')]",
-                        "RSSPath": "[parameters('rssPath')]"
-
-                    }
-                }
-            ]
-        },
-        {
-            "name": "[parameters('keyVaultName')]",
-            "type": "Microsoft.KeyVault/vaults",
-            "apiVersion": "2016-10-01",
-            "location": "[parameters('location')]",
-            "dependsOn": [
-                "[resourceId('Microsoft.Web/Sites', parameters('functionAppName'))]"
-            ],
-            "properties": {
-                "enabledForDeployment": false,
-                "enabledForTemplateDeployment": false,
-                "enabledForDiskEncryption": false,
-                "tenantId": "[subscription().tenantId]",
-                "accessPolicies": [
-                    {
-                        "tenantId": "[reference(resourceId('Microsoft.Web/Sites', parameters('functionAppName')), '2018-11-01', 'Full').Identity.tenantId]",
-                        "objectId": "[reference(resourceId('Microsoft.Web/Sites', parameters('functionAppName')), '2018-11-01', 'Full').Identity.principalId]",
-                        "permissions": {
-                            "secrets": [
-                                "Get"
-                            ]
-                        }
-                    }
-                ],
-                "sku": {
-                    "name": "standard",
-                    "family": "A"
-                }
-            },
-            "resources": [
-                {
-                    "type": "secrets",
-                    "name": "[variables('StorageConnectionSecretName')]",
-                    "apiVersion": "2016-10-01",
-                    "dependsOn": [
-                        "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
-                        "[resourceId('Microsoft.Storage/storageAccounts',parameters('storageAccountName'))]"
-                    ],
-                    "properties": {
-                        "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';EndpointSuffix=', environment().suffixes.storage, ';AccountKey=', listKeys(variables('storageAccountResourceId'),'2015-05-01-preview').key1)]"
-                    }
-                },
-                {
-                    "name": "[variables('appInsightsSecretName')]",
-                    "type": "secrets",
-                    "apiVersion": "2016-10-01",
-                    "dependsOn": [
-                        "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
-                        "[resourceId('microsoft.insights/components',parameters('functionAppName'))]"
-                    ],
-                    "properties": {
-                        "value": "[reference(resourceId('microsoft.insights/components/', parameters('functionAppName')), '2015-05-01').InstrumentationKey]"
-                    }
-                }
-            ]
-        }
-    ],
-    "outputs": {
-        "rssfeed": {
-            "type": "string",
-            "value": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))).primaryEndpoints.blob,parameters('rssPath'))]"
-        }
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.4.1008.15138",
+      "templateHash": "2301991052681455695"
     }
+  },
+  "parameters": {
+    "storageAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Storage account name where Azure Function will be stored and where RSS Feed will be available"
+      }
+    },
+    "keyVaultName": {
+      "type": "string",
+      "metadata": {
+        "description": "Key vault name used to store connection string securely"
+      }
+    },
+    "functionAppName": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure Function Name"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Location for all resources."
+      }
+    },
+    "scheduleTrigger": {
+      "type": "string",
+      "defaultValue": "0 0 0 */1 * *",
+      "metadata": {
+        "description": "CRON expression for Timer Trigger of Azure Function"
+      }
+    },
+    "marketPlaceUpdatesURL": {
+      "type": "string",
+      "defaultValue": "https://raw.githubusercontent.com/MicrosoftDocs/azure-stack-docs/master/azure-stack/operator/azure-stack-marketplace-changes.md",
+      "metadata": {
+        "description": "GitHub URL of the MarketPlace changelog"
+      }
+    },
+    "rssPath": {
+      "type": "string",
+      "defaultValue": "rss/feed.xml",
+      "metadata": {
+        "description": "Output file for RSS Feed (container/file.xml format)"
+      }
+    }
+  },
+  "functions": [],
+  "variables": {
+    "storageConnectionSecretName": "StorageConnection",
+    "appInsightsSecretName": "appInsightsKey",
+    "containerName": "[first(split(parameters('rssPath'), '/'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2021-04-01",
+      "name": "[parameters('storageAccountName')]",
+      "location": "[parameters('location')]",
+      "kind": "StorageV2",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "properties": {
+        "supportsHttpsTrafficOnly": true,
+        "accessTier": "Hot",
+        "encryption": {
+          "services": {
+            "file": {
+              "keyType": "Account",
+              "enabled": true
+            },
+            "blob": {
+              "keyType": "Account",
+              "enabled": true
+            }
+          },
+          "keySource": "Microsoft.Storage"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2021-04-01",
+      "name": "[format('{0}/default/{1}', parameters('storageAccountName'), variables('containerName'))]",
+      "properties": {
+        "publicAccess": "Blob"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2021-02-01",
+      "name": "[parameters('functionAppName')]",
+      "location": "[parameters('location')]",
+      "kind": "functionapp",
+      "sku": {
+        "name": "Y1",
+        "tier": "Dynamic"
+      }
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[parameters('functionAppName')]",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web"
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2021-02-01",
+      "name": "[parameters('functionAppName')]",
+      "location": "[parameters('location')]",
+      "kind": "functionapp",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('functionAppName'))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', parameters('functionAppName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites/config",
+      "apiVersion": "2021-02-01",
+      "name": "[format('{0}/{1}', parameters('functionAppName'), 'appsettings')]",
+      "properties": {
+        "WEBSITE_ENABLE_SYNC_UPDATE_SITE": "true",
+        "FUNCTIONS_EXTENSION_VERSION": "~4",
+        "APPINSIGHTS_INSTRUMENTATIONKEY": "[format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), variables('appInsightsSecretName'))).secretUriWithVersion)]",
+        "AzureWebJobsDashboard": "[format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), variables('storageConnectionSecretName'))).secretUriWithVersion)]",
+        "AzureWebJobsStorage": "[format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), variables('storageConnectionSecretName'))).secretUriWithVersion)]",
+        "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": "[format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), variables('storageConnectionSecretName'))).secretUriWithVersion)]",
+        "WEBSITE_CONTENTSHARE": "[toLower(parameters('functionAppName'))]",
+        "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+        "StorageConnection": "[format('@Microsoft.KeyVault(SecretUri={0})', reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), variables('storageConnectionSecretName'))).secretUriWithVersion)]",
+        "ScheduleTriggerTime": "[parameters('scheduleTrigger')]",
+        "MarketPlaceUpdatesURL": "[parameters('marketPlaceUpdatesURL')]",
+        "RSSPath": "[parameters('rssPath')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), variables('appInsightsSecretName'))]",
+        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), variables('storageConnectionSecretName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2021-04-01-preview",
+      "name": "[parameters('keyVaultName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "enabledForDeployment": false,
+        "enabledForTemplateDeployment": false,
+        "enabledForDiskEncryption": false,
+        "tenantId": "[subscription().tenantId]",
+        "accessPolicies": [
+          {
+            "tenantId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2021-02-01', 'full').identity.tenantId]",
+            "objectId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2021-02-01', 'full').identity.principalId]",
+            "permissions": {
+              "secrets": [
+                "get"
+              ]
+            }
+          }
+        ],
+        "sku": {
+          "name": "standard",
+          "family": "A"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2021-06-01-preview",
+      "name": "[format('{0}/{1}', parameters('keyVaultName'), variables('storageConnectionSecretName'))]",
+      "properties": {
+        "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', parameters('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2021-04-01').keys[0].value)]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2021-06-01-preview",
+      "name": "[format('{0}/{1}', parameters('keyVaultName'), variables('appInsightsSecretName'))]",
+      "properties": {
+        "value": "[reference(resourceId('Microsoft.Insights/components', parameters('functionAppName'))).InstrumentationKey]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/components', parameters('functionAppName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "rssfeed": {
+      "type": "string",
+      "value": "[format('{0}{1}', reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))).primaryEndpoints.blob, parameters('rssPath'))]"
+    }
+  }
 }
