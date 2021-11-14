@@ -7,8 +7,10 @@ using System.ServiceModel.Syndication;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml;
-using Microsoft.Azure.Storage.Blob;
+using Azure.Storage.Blobs.Models;
+using Azure.Storage.Blobs.Specialized;
 using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Timers;
 using Microsoft.Extensions.Logging;
 
 namespace AZSHFuncs {
@@ -28,7 +30,7 @@ namespace AZSHFuncs {
         private static Regex itemRegex = new Regex(@"- (?<date>\d{2}\/\d{2}\/\d{4}): (?<product>.+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         [FunctionName("CreateAZSHMarketPlaceFeed")]
-        public static async Task Run([TimerTrigger("%ScheduleTriggerTime%")] TimerInfo timer, [Blob("%RSSPath%", FileAccess.Write, Connection = "StorageConnection")] CloudBlockBlob feedBlob,
+        public static async Task Run([TimerTrigger("%ScheduleTriggerTime%")] TimerInfo timer, [Blob("%RSSPath%", FileAccess.ReadWrite, Connection = "StorageConnection")] BlockBlobClient feedBlob,
             ILogger log) {
 
             log.LogInformation($"AzureStack Hun MarketPlace RSS Generator launched at: {DateTime.Now}");
@@ -41,17 +43,16 @@ namespace AZSHFuncs {
                     string line;
                     string section = "";
                     while (null != (line = await reader.ReadLineAsync())) {
-
                         if (line.Contains("ms.date:")) {
-                            lastUpdated = DateTime.Parse(line.Split(":") [1].Trim(), System.Globalization.CultureInfo.GetCultureInfo("en-US").DateTimeFormat,System.Globalization.DateTimeStyles.AssumeUniversal);
+                            lastUpdated = DateTime.Parse(line.Split(":") [1].Trim(), System.Globalization.CultureInfo.GetCultureInfo("en-US").DateTimeFormat, System.Globalization.DateTimeStyles.AssumeUniversal);
                             log.LogInformation($"GitHub page was last updated on: {lastUpdated.ToShortDateString()}");
-                            if (feedBlob.Exists() &&
-                                feedBlob.Metadata.ContainsKey(lastUpdatedMetadataKey) &&
-                                feedBlob.Metadata[lastUpdatedMetadataKey].Equals(lastUpdated.ToShortDateString())) {
-
-                                log.LogInformation("RSS Feed is already up to date, will quit");
-                                return;
-
+                            if (feedBlob.Exists()) {
+                                var blobProperties = await feedBlob.GetPropertiesAsync();
+                                if (blobProperties.Value.Metadata.ContainsKey(lastUpdatedMetadataKey) &&
+                                    blobProperties.Value.Metadata[lastUpdatedMetadataKey].Equals(lastUpdated.ToShortDateString())) {
+                                    log.LogInformation("RSS Feed is already up to date, will quit");
+                                    return;
+                                }
                             }
                         }
 
@@ -67,7 +68,7 @@ namespace AZSHFuncs {
                                 new MarketPlaceItem {
                                     Name = matchItem.Groups["product"].Value,
                                         Change = section,
-                                        ReleaseDate = DateTime.Parse(matchItem.Groups["date"].Value, System.Globalization.CultureInfo.GetCultureInfo("en-US").DateTimeFormat,System.Globalization.DateTimeStyles.AssumeUniversal)
+                                        ReleaseDate = DateTime.Parse(matchItem.Groups["date"].Value, System.Globalization.CultureInfo.GetCultureInfo("en-US").DateTimeFormat, System.Globalization.DateTimeStyles.AssumeUniversal)
 
                                 }
                             );
@@ -97,10 +98,15 @@ namespace AZSHFuncs {
                         rssFormatter.WriteTo(xmlWriter);
                         await xmlWriter.FlushAsync();
                     }
-                    stream.Seek(0,SeekOrigin.Begin);
-                    feedBlob.Properties.ContentType = "application/rss+xml; charset=utf-8";
-                    feedBlob.Metadata[lastUpdatedMetadataKey] = lastUpdated.ToShortDateString();
-                    await feedBlob.UploadFromStreamAsync(stream);
+                    stream.Seek(0, SeekOrigin.Begin);
+                    var properties = new BlobHttpHeaders() {
+                        ContentType = "application/rss+xml; charset=utf-8"
+                    };
+                    var metadata = new Dictionary<string, string> { 
+                        { lastUpdatedMetadataKey, lastUpdated.ToShortDateString() }
+                    };
+
+                    await feedBlob.UploadAsync(stream, new BlobUploadOptions { HttpHeaders = properties, Metadata = metadata });
                 }
             }
 
@@ -120,7 +126,7 @@ namespace AZSHFuncs {
                 .Select(i => new SyndicationItem {
                     Title = new TextSyndicationContent("Market Place Item Update on " + i.Key.ReleaseDate.ToShortDateString()),
                         PublishDate = new DateTimeOffset(i.Key.ReleaseDate.ToUniversalTime()),
-                        Content = new TextSyndicationContent(String.Join("\n", i.ToList().Select(it => String.Format("{0} - {1}", it.Change, it.Name))),TextSyndicationContentKind.Plaintext)
+                        Content = new TextSyndicationContent(String.Join("\n", i.ToList().Select(it => String.Format("{0} - {1}", it.Change, it.Name))), TextSyndicationContentKind.Plaintext)
                 });
 
             feed.Items = feedItems;
