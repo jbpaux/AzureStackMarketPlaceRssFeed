@@ -3,6 +3,5 @@
   "azureFunctions.projectLanguage": "C#",
   "azureFunctions.projectRuntime": "~4",
   "debug.internalConsoleOptions": "neverOpen",
-  "azureFunctions.preDeployTask": "publish",
-  "python.pythonPath": ".venv\\Scripts\\python.exe"
+  "azureFunctions.preDeployTask": "publish"
 }
